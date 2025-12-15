@@ -1,20 +1,22 @@
 use dep::aztec::macros::aztec;
 pub mod types;
+mod test;
 
 #[aztec]
 contract Governance {
     use crate::types::field_note::FieldNote;
     use crate::types::members_note::MembersNote;
     use crate::types::proposal_note::ProposalNote;
-    use aztec::context;
+    use aztec::context::{self, utility_context::UtilityContext};
     use aztec::keys::getters::get_public_keys;
     use aztec::{
-        macros::{functions::{external, initializer}, storage::storage},
+        macros::{functions::{external, initializer, view}, storage::storage},
         note::{note_getter_options::NoteGetterOptions, note_interface::NoteProperties},
         protocol_types::{address::AztecAddress, hash::poseidon2_hash, traits::Hash},
         state_vars::{private_mutable::PrivateMutable, private_set::PrivateSet},
         utils::comparison::Comparator,
     };
+    use aztec::messages::message_delivery::MessageDelivery;
 
     #[storage]
     struct Storage<Context> {
@@ -25,7 +27,7 @@ contract Governance {
 
     #[external("private")]
     #[initializer]
-    fn constructor(admin: AztecAddress, name: str<31>, symbol: str<31>) {
+    fn constructor(admin: AztecAddress) {
         assert(!admin.is_zero(), "invalid admin");
         let mut members = [0; 10];
         members[0] = admin.inner;
@@ -86,5 +88,23 @@ contract Governance {
         // Remove old proposal and add updated one
         let insertion = storage.proposals.insert(updated_proposal);
     }
+
+    #[external("private")]
+    fn peak() {
+        let proposal_id_cur = storage.last_proposal_id.replace(|note| note);
+        proposal_id_cur.emit(context.msg_sender().unwrap(), MessageDelivery.CONSTRAINED_ONCHAIN);
+    }
+
+    #[external("utility")]
+    unconstrained fn _view_current_id() -> pub Field {
+        let note = storage.last_proposal_id.view_note();
+        note.value()
+    }
+
+    //#[external("utility")]
+    //unconstrained fn _view_members(storage: Storage<UtilityContext>) -> pub MembersNote {
+    //    let note = storage.members.view_note();
+    //    note
+    // }
 
 }
