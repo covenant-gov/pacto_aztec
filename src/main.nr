@@ -7,10 +7,10 @@ contract Governance {
     use crate::types::field_note::FieldNote;
     use crate::types::members_note::MembersNote;
     use crate::types::proposal_note::ProposalNote;
-    use aztec::context::{self, utility_context::UtilityContext};
+    use aztec::context;
     use aztec::keys::getters::get_public_keys;
     use aztec::{
-        macros::{functions::{external, initializer, view}, storage::storage},
+        macros::{functions::{external, initializer}, storage::storage},
         note::{note_getter_options::NoteGetterOptions, note_interface::NoteProperties},
         protocol_types::{address::AztecAddress, hash::poseidon2_hash, traits::Hash},
         state_vars::{private_mutable::PrivateMutable, private_set::PrivateSet},
@@ -28,7 +28,7 @@ contract Governance {
     #[external("private")]
     #[initializer]
     fn constructor(admin: AztecAddress) {
-        assert(!admin.is_zero(), "invalid admin");
+        //assert(!admin.is_zero(), "invalid admin");
         let mut members = [0; 10];
         members[0] = admin.inner;
         let members_note = MembersNote::new(context.this_address(), members);
@@ -42,7 +42,7 @@ contract Governance {
         let _ = storage.last_proposal_id.replace(|note| {
             let count = note.value();
             let proposal = ProposalNote::new(context.this_address(), count);
-            storage.proposals.insert(proposal);
+            let _insertion = storage.proposals.insert(proposal);
             let new_count_note = FieldNote::new(count + 1, context.this_address());
             new_count_note
         });
@@ -86,7 +86,7 @@ contract Governance {
         let updated_proposal = retrieved_note.vote(choice);
 
         // Remove old proposal and add updated one
-        let insertion = storage.proposals.insert(updated_proposal);
+        let _insertion = storage.proposals.insert(updated_proposal);
     }
 
     #[external("private")]
