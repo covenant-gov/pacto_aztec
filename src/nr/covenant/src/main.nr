@@ -11,7 +11,10 @@ contract Governance {
     use aztec::keys::getters::get_public_keys;
     use aztec::{
         macros::{functions::{external, initializer}, storage::storage},
-        note::{note_getter_options::NoteGetterOptions, note_interface::NoteProperties},
+        note::{
+            note_getter_options::NoteGetterOptions, note_interface::NoteProperties,
+            note_viewer_options::NoteViewerOptions,
+        },
         protocol_types::{address::AztecAddress, hash::poseidon2_hash, traits::Hash},
         state_vars::{private_mutable::PrivateMutable, private_set::PrivateSet},
         utils::comparison::Comparator,
@@ -47,30 +50,56 @@ contract Governance {
 
     #[external("private")]
     fn create_proposal() {
-        let _ = storage.last_proposal_id.replace(|note| {
-            let count = note.value();
-            let proposal = ProposalNote::new(context.this_address(), count);
-            let _insertion = storage.proposals.insert(proposal);
-            let new_count_note = FieldNote::new(count + 1, context.this_address());
-            new_count_note
-        });
+        storage
+            .members
+            .replace(|note| {
+                let msg_sender = context.msg_sender().unwrap();
+                let mut is_member = false;
+
+                // Check membership
+                for i in 0..10 {
+                    if note.members[i] == msg_sender.inner {
+                        is_member = true;
+                    }
+                }
+                assert(is_member, "Not a member");
+                note
+            })
+            .emit(context.this_address(), MessageDelivery.CONSTRAINED_ONCHAIN);
+
+        storage
+            .last_proposal_id
+            .replace(|note| {
+                let count = note.value();
+                let proposal = ProposalNote::new(context.this_address(), count);
+                storage.proposals.insert(proposal).emit(
+                    context.this_address(),
+                    MessageDelivery.CONSTRAINED_ONCHAIN,
+                );
+                let new_count_note = FieldNote::new(count + 1, context.this_address());
+                new_count_note
+            })
+            .emit(context.this_address(), MessageDelivery.CONSTRAINED_ONCHAIN);
     }
 
     #[external("private")]
     fn cast_vote(proposal_id: Field, choice: u32) {
-        let _ = storage.members.replace(|note| {
-            let msg_sender = context.msg_sender().unwrap();
-            let mut is_member = false;
+        storage
+            .members
+            .replace(|note| {
+                let msg_sender = context.msg_sender().unwrap();
+                let mut is_member = false;
 
-            // Check membership
-            for i in 0..10 {
-                if note.members[i] == msg_sender.inner {
-                    is_member = true;
+                // Check membership
+                for i in 0..10 {
+                    if note.members[i] == msg_sender.inner {
+                        is_member = true;
+                    }
                 }
-            }
-            assert(is_member, "Not a member");
-            note
-        });
+                assert(is_member, "Not a member");
+                note
+            })
+            .emit(context.this_address(), MessageDelivery.CONSTRAINED_ONCHAIN);
 
         // Find the proposal
         let options = NoteGetterOptions::new().select(
@@ -94,13 +123,10 @@ contract Governance {
         let updated_proposal = retrieved_note.vote(choice);
 
         // Remove old proposal and add updated one
-        let _insertion = storage.proposals.insert(updated_proposal);
-    }
-
-    #[external("private")]
-    fn peak() {
-        let proposal_id_cur = storage.last_proposal_id.replace(|note| note);
-        proposal_id_cur.emit(context.msg_sender().unwrap(), MessageDelivery.CONSTRAINED_ONCHAIN);
+        storage.proposals.insert(updated_proposal).emit(
+            context.this_address(),
+            MessageDelivery.CONSTRAINED_ONCHAIN,
+        );
     }
 
     #[external("utility")]
@@ -109,10 +135,22 @@ contract Governance {
         note.value()
     }
 
-    //#[external("utility")]
-    //unconstrained fn _view_members(storage: Storage<UtilityContext>) -> pub MembersNote {
-    //    let note = storage.members.view_note();
-    //    note
-    // }
+    #[external("utility")]
+    unconstrained fn _view_members() -> pub [Field; 10] {
+        let note = storage.members.view_note();
+        note.members
+    }
+
+    #[external("utility")]
+    unconstrained fn _view_proposal(proposal_id: Field) -> ProposalNote {
+        let options = NoteViewerOptions::new().select(
+            ProposalNote::properties().proposal_id,
+            Comparator.EQ,
+            proposal_id,
+        );
+        let notes = storage.proposals.view_notes(options);
+        assert(notes.len() == 1, "Proposal not found");
+        notes.get_unchecked(0)
+    }
 
 }

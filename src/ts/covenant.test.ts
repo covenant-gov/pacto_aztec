@@ -76,11 +76,10 @@ describe("Counter Contract", () => {
     );
 
     console.log("Contract address: ", gov.address);
-    console.log("Contract Keys: ", govKeys);
 
     // Register initial test accounts manually because of this:
     // https://github.com/AztecProtocol/aztec-packages/blame/next/yarn-project/accounts/src/schnorr/lazy.ts#L21-L25
-    [alice] = await Promise.all(
+    [alice, bob] = await Promise.all(
       INITIAL_TEST_SECRET_KEYS.map(async (secret, i) => {
         const accountManager = await wallet.createSchnorrAccount(
           secret,
@@ -101,9 +100,156 @@ describe("Counter Contract", () => {
       from: alice,
     });
 
-    console.log(current_id);
+    const current_members = await gov.methods._view_members().simulate({
+      from: alice,
+    });
 
-    //starting counter's value is 0
+    // starting members list should be only the admin, at this case alice
+    expect(current_members[0]).toStrictEqual(alice.toBigInt());
+
+    // starting counter's value is 0
     expect(current_id).toStrictEqual(0n);
   });
-});
+
+  it("create proposal from member, should succeed", async () => {
+    await gov
+      .withWallet(wallet)
+      .methods.create_proposal()
+      .send({ from: alice })
+      .wait();
+
+    console.log('Proposal created!');
+
+    const proposal = await gov.methods._view_proposal(0n).simulate({
+      from: alice,
+    });
+
+    expect(proposal.proposal_id).toStrictEqual(0n);
+    expect(proposal.votes_for).toStrictEqual(0n);
+    expect(proposal.votes_against).toStrictEqual(0n);
+
+    const new_id = await gov.methods._view_current_id().simulate({
+      from: alice,
+    });
+    //
+    // After a new proposal has been created it should 1
+    expect(new_id).toStrictEqual(1n);
+  })
+
+  it("create proposal from non member, should fail", async () => {
+    await expect(
+      gov
+        .withWallet(wallet)
+        .methods.create_proposal()
+        .send({ from: bob })
+        .wait(),
+    ).rejects.toThrow(/Assertion failed: Not a member/)
+
+
+    const current_id = await gov.methods._view_current_id().simulate({
+      from: bob,
+    });
+    //
+    // After a new proposal has been created it should 1
+    expect(current_id).toStrictEqual(0n);
+  })
+
+  it("vote on proposal from member, should succeed", async () => {
+    await gov
+      .withWallet(wallet)
+      .methods.create_proposal()
+      .send({ from: alice })
+      .wait();
+
+    console.log('Proposal created!');
+
+    await gov
+      .withWallet(wallet)
+      .methods.cast_vote(0n, 1)
+      .send({ from: alice })
+      .wait();
+
+    const new_proposal = await gov.methods._view_proposal(0n).simulate({
+      from: alice,
+    });
+
+    expect(new_proposal.votes_for).toStrictEqual(1n);
+  })
+
+  it("vote on proposal from member a second time, should fail", async () => {
+    await gov
+      .withWallet(wallet)
+      .methods.create_proposal()
+      .send({ from: alice })
+      .wait();
+
+    console.log('Proposal created!');
+
+    await gov
+      .withWallet(wallet)
+      .methods.cast_vote(0n, 1)
+      .send({ from: alice })
+      .wait();
+
+    const new_proposal = await gov.methods._view_proposal(0n).simulate({
+      from: alice,
+    });
+
+    expect(new_proposal.votes_for).toStrictEqual(1n);
+
+    await expect(
+      gov
+        .withWallet(wallet)
+        .methods.cast_vote(0n, 1)
+        .send({ from: alice })
+        .wait(),
+    ).rejects.toThrow('Invalid tx: Existing nullifier')
+
+    const n_proposal = await gov.methods._view_proposal(0n).simulate({
+      from: alice,
+    });
+
+    console.log(n_proposal)
+
+    await expect(
+      gov
+        .withWallet(wallet)
+        .methods.cast_vote(0n, 0)
+        .send({ from: alice })
+        .wait(),
+    ).rejects.toThrow('Invalid tx: Existing nullifier')
+
+    const nn_proposal = await gov.methods._view_proposal(0n).simulate({
+      from: alice,
+    });
+
+    console.log(nn_proposal)
+  })
+
+  it("vote on proposal from non member, should fail", async () => {
+    await gov
+      .withWallet(wallet)
+      .methods.create_proposal()
+      .send({ from: alice })
+      .wait();
+
+    console.log('Proposal created!');
+
+    await expect(
+      gov
+        .withWallet(wallet)
+        .methods.cast_vote(0n, 1)
+        .send({ from: bob })
+        .wait(),
+    ).rejects.toThrow(/Assertion failed: Not a member/)
+
+    const current_id = await gov.methods._view_current_id().simulate({
+      from: bob,
+    });
+
+    // After a new proposal has been created it should be1
+    expect(current_id).toStrictEqual(1n);
+  })
+})
+
+
