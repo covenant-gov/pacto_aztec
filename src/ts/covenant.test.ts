@@ -5,7 +5,7 @@ import {
 import { describe, it, expect, beforeAll, beforeEach, afterEach } from "vitest";
 import { TestWallet } from "@aztec/test-wallet/server";
 import { createAztecNodeClient } from "@aztec/aztec.js/node";
-import { deployGovernance, setupTestSuite } from "./utils.js";
+import { assertOwnsPrivateNFT, deployGovernance, deployNFTWithMinter, deployTokenWithMinter, expectTokenBalances, expectUintNote, setupTestSuite } from "./utils.js";
 import { AztecAddress } from "@aztec/stdlib/aztec-address";
 import { type AztecLMDBStoreV2 } from "@aztec/kv-store/lmdb-v2";
 
@@ -19,8 +19,12 @@ import { PXE } from "@aztec/pxe/server";
 import { Fr, GrumpkinScalar } from "@aztec/aztec.js/fields";
 import { deriveKeys, PublicKeys } from "@aztec/stdlib/keys";
 import { getContractInstanceFromInstantiationParams } from "@aztec/stdlib/contract";
+import {
+  TokenContract, TokenContractArtifact,
+} from "../artifacts/Token.js";
+import { NFTContract } from "../artifacts/NFT.js";
 
-describe("Counter Contract", () => {
+describe("Gov Contract", () => {
   let pxe: PXE;
   let store: AztecLMDBStoreV2;
 
@@ -29,6 +33,11 @@ describe("Counter Contract", () => {
 
   let alice: AztecAddress;
   let bob: AztecAddress;
+  let token: TokenContract;
+
+  const AMOUNT = 1000n;
+  const wad = (n: number = 1) => AMOUNT * BigInt(n);
+
 
   let gov: GovernanceContract;
   let govSk: Fr;
@@ -64,8 +73,6 @@ describe("Counter Contract", () => {
       GovernanceContractArtifact,
       govSk,
     );
-
-    console.log("Contract address: ", gov.address);
 
     // Register initial test accounts manually because of this:
     // https://github.com/AztecProtocol/aztec-packages/blame/next/yarn-project/accounts/src/schnorr/lazy.ts#L21-L25
@@ -108,8 +115,6 @@ describe("Counter Contract", () => {
       .send({ from: alice })
       .wait();
 
-    console.log('Proposal created!');
-
     const proposal = await gov.methods._view_proposal(0n).simulate({
       from: alice,
     });
@@ -144,101 +149,88 @@ describe("Counter Contract", () => {
     expect(current_id).toStrictEqual(0n);
   })
 
-  it("vote on proposal from member, should succeed", async () => {
-    await gov
-      .withWallet(wallet)
-      .methods.create_proposal()
-      .send({ from: alice })
-      .wait();
+  describe("voting", async () => {
 
-    console.log('Proposal created!');
-
-    await gov
-      .withWallet(wallet)
-      .methods.cast_vote(0n, 1)
-      .send({ from: alice })
-      .wait();
-
-    const new_proposal = await gov.methods._view_proposal(0n).simulate({
-      from: alice,
+    beforeEach(async () => {
+      await gov
+        .withWallet(wallet)
+        .methods.create_proposal()
+        .send({ from: alice })
+        .wait();
     });
 
-    expect(new_proposal.votes_for).toStrictEqual(1n);
-  })
-
-  it("vote on proposal from member a second time, should fail", async () => {
-    await gov
-      .withWallet(wallet)
-      .methods.create_proposal()
-      .send({ from: alice })
-      .wait();
-
-    console.log('Proposal created!');
-
-    await gov
-      .withWallet(wallet)
-      .methods.cast_vote(0n, 1)
-      .send({ from: alice })
-      .wait();
-
-    const new_proposal = await gov.methods._view_proposal(0n).simulate({
-      from: alice,
-    });
-
-    expect(new_proposal.votes_for).toStrictEqual(1n);
-
-    await expect(
-      gov
+    it("vote on proposal from member, should succeed", async () => {
+      await gov
         .withWallet(wallet)
         .methods.cast_vote(0n, 1)
         .send({ from: alice })
-        .wait(),
-    ).rejects.toThrow('Invalid tx: Existing nullifier')
+        .wait();
 
-    const n_proposal = await gov.methods._view_proposal(0n).simulate({
-      from: alice,
+      const new_proposal = await gov.methods._view_proposal(0n).simulate({
+        from: alice,
+      });
+
+      expect(new_proposal.votes_for).toStrictEqual(1n);
     });
 
-    console.log(n_proposal)
-
-    await expect(
-      gov
-        .withWallet(wallet)
-        .methods.cast_vote(0n, 0)
-        .send({ from: alice })
-        .wait(),
-    ).rejects.toThrow('Invalid tx: Existing nullifier')
-
-    const nn_proposal = await gov.methods._view_proposal(0n).simulate({
-      from: alice,
-    });
-
-    console.log(nn_proposal)
-  })
-
-  it("vote on proposal from non member, should fail", async () => {
-    await gov
-      .withWallet(wallet)
-      .methods.create_proposal()
-      .send({ from: alice })
-      .wait();
-
-    console.log('Proposal created!');
-
-    await expect(
-      gov
+    it("vote on proposal from member a second time, should fail", async () => {
+      await gov
         .withWallet(wallet)
         .methods.cast_vote(0n, 1)
-        .send({ from: bob })
-        .wait(),
-    ).rejects.toThrow(/Assertion failed: Not a member/)
+        .send({ from: alice })
+        .wait();
 
-    const current_id = await gov.methods._view_current_id().simulate({
-      from: bob,
+      const new_proposal = await gov.methods._view_proposal(0n).simulate({
+        from: alice,
+      });
+
+      expect(new_proposal.votes_for).toStrictEqual(1n);
+
+      await expect(
+        gov
+          .withWallet(wallet)
+          .methods.cast_vote(0n, 1)
+          .send({ from: alice })
+          .wait(),
+      ).rejects.toThrow('Invalid tx: Existing nullifier')
+
+      const n_proposal = await gov.methods._view_proposal(0n).simulate({
+        from: alice,
+      });
+
+      console.log(n_proposal)
+
+      await expect(
+        gov
+          .withWallet(wallet)
+          .methods.cast_vote(0n, 0)
+          .send({ from: alice })
+          .wait(),
+      ).rejects.toThrow('Invalid tx: Existing nullifier')
+
+      const nn_proposal = await gov.methods._view_proposal(0n).simulate({
+        from: alice,
+      });
+
+      console.log(nn_proposal)
     });
 
-    // After a new proposal has been created it should be1
-    expect(current_id).toStrictEqual(1n);
+    it("vote on proposal from non member, should fail", async () => {
+      await expect(
+        gov
+          .withWallet(wallet)
+          .methods.cast_vote(0n, 1)
+          .send({ from: bob })
+          .wait(),
+      ).rejects.toThrow(/Assertion failed: Not a member/)
+
+      const current_id = await gov.methods._view_current_id().simulate({
+        from: bob,
+      });
+
+      // After a new proposal has been created it should be1
+      expect(current_id).toStrictEqual(1n);
+    });
   })
 
   it("member adds a new member(bob), should succeed"), async () => {
@@ -426,6 +418,98 @@ describe("Counter Contract", () => {
         .wait(),
     ).rejects.toThrow(/Assertion failed: Not admin/)
   };
+
+  describe('withdraw', () => {
+    beforeEach(async () => {
+      token = (await deployTokenWithMinter(wallet, alice)) as TokenContract;
+      await token
+        .withWallet(wallet)
+        .methods.mint_to_private(gov.instance.address, AMOUNT)
+        .send({ from: alice })
+        .wait();
+    });
+
+    it('member should be able to withdraw correctly', async () => {
+      await expectTokenBalances(token, gov.address, wad(0), AMOUNT, bob);
+      await expectTokenBalances(token, bob, wad(0), wad(0));
+
+      await gov
+        .withWallet(wallet)
+        .methods.withdraw(token.address, AMOUNT, bob)
+        .send({ from: alice })
+        .wait();
+
+      await expectTokenBalances(token, gov.address, wad(0), wad(0), bob);
+      await expectTokenBalances(token, bob, wad(0), AMOUNT);
+
+      const notes = await wallet.getNotes({ contractAddress: token.address, scopes: [bob] });
+      expect(notes.length).toBe(1);
+    });
+
+    it('not a member should NOT be able to withdraw', async () => {
+      await expectTokenBalances(token, gov.address, wad(0), AMOUNT, bob);
+      await expectTokenBalances(token, bob, wad(0), wad(0));
+
+      await expect(
+        gov
+          .withWallet(wallet)
+          .methods.withdraw(token.address, AMOUNT, bob)
+          .send({ from: bob })
+          .wait(),
+      ).rejects.toThrow(/Assertion failed: Not a member/)
+
+
+      await expectTokenBalances(token, gov.address, wad(0), AMOUNT, bob);
+      await expectTokenBalances(token, bob, wad(0), wad(0));
+
+      const notes = await wallet.getNotes({ contractAddress: token.address, scopes: [bob] });
+      expect(notes.length).toBe(0);
+    });
+  })
+  describe('withdraw NFT', () => {
+    let nft: NFTContract;
+    let tokenId: bigint;
+
+    beforeEach(async () => {
+      tokenId = 1n;
+      nft = (await deployNFTWithMinter(wallet, alice)) as NFTContract;
+      await nft.withWallet(wallet).methods.mint_to_private(gov.address, tokenId).send({ from: alice }).wait();
+    });
+
+    it('member should be able to withdraw NFT correctly', async () => {
+      await assertOwnsPrivateNFT(nft, tokenId, gov.address, true, bob);
+      await assertOwnsPrivateNFT(nft, tokenId, bob, false);
+
+      await gov
+        .withWallet(wallet)
+        .methods.withdraw_nft(nft.address, tokenId, bob)
+        .send({ from: alice })
+        .wait();
+
+      await assertOwnsPrivateNFT(nft, tokenId, gov.address, false, bob);
+      await assertOwnsPrivateNFT(nft, tokenId, bob, true);
+
+      const notes = await wallet.getNotes({ contractAddress: nft.address, scopes: [bob] });
+      expect(notes.length).toBe(1);
+    });
+
+    it('not a member should NOT be able to withdraw NFT', async () => {
+      await assertOwnsPrivateNFT(nft, tokenId, gov.address, true, bob);
+      await assertOwnsPrivateNFT(nft, tokenId, bob, false);
+
+      await expect(
+        gov
+          .withWallet(wallet)
+          .methods.withdraw_nft(nft.address, tokenId, bob)
+          .send({ from: bob })
+          .wait(),
+      ).rejects.toThrow(/Assertion failed: Not a member/)
+
+      await assertOwnsPrivateNFT(nft, tokenId, gov.address, true, bob);
+      await assertOwnsPrivateNFT(nft, tokenId, bob, false);
+
+      const notes = await wallet.getNotes({ contractAddress: nft.address, scopes: [bob] });
+      expect(notes.length).toBe(0);
+    });
+  })
 })
-
-

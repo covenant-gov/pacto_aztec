@@ -7,7 +7,7 @@ contract Governance {
     use crate::types::field_note::FieldNote;
     use crate::types::members_note::MembersNote;
     use crate::types::proposal_note::ProposalNote;
-    use aztec::context;
+    use aztec::context::{self, private_context::PrivateContext};
     use aztec::keys::getters::get_public_keys;
     use aztec::{
         macros::{functions::{external, initializer}, storage::storage},
@@ -20,6 +20,9 @@ contract Governance {
         utils::comparison::Comparator,
     };
     use aztec::messages::message_delivery::MessageDelivery;
+
+    use nft::NFT;
+    use token::Token;
 
     #[storage]
     struct Storage<Context> {
@@ -184,6 +187,66 @@ contract Governance {
                 note
             })
             .emit(context.this_address(), MessageDelivery.CONSTRAINED_ONCHAIN)
+    }
+
+    /// @notice Withdraws an amount from the treasury's private balance to the
+    ///         recipient's private balance.
+    /// @dev Can only be called by a member for now
+    /// @param token The address of the token
+    /// @param amount The amount of tokens to withdraw from the treasury
+    /// @param recipient The address of the recipient
+    #[external("private")]
+    fn withdraw(token: AztecAddress, amount: u128, recipient: AztecAddress) {
+        storage
+            .members
+            .replace(|note| {
+                let msg_sender = context.msg_sender().unwrap();
+                let mut is_member = false;
+
+                // Check membership
+                for i in 0..10 {
+                    if note.members[i] == msg_sender.inner {
+                        is_member = true;
+                    }
+                }
+                assert(is_member, "Not a member");
+                note
+            })
+            .emit(context.this_address(), MessageDelivery.CONSTRAINED_ONCHAIN);
+
+        Token::at(token)
+            .transfer_private_to_private(context.this_address(), recipient, amount, 0)
+            .call(&mut context);
+    }
+
+    /// @notice Withdraws a token of a given ID from the treasury's private balance to
+    ///         the recipient's private balance
+    /// @dev Can only be called by a member for now
+    /// @param nft The address of the NFT contract
+    /// @param token_id The id of the token to withdraw from the treasury
+    /// @param recipient The address of the recipient
+    #[external("private")]
+    fn withdraw_nft(nft: AztecAddress, token_id: Field, recipient: AztecAddress) {
+        storage
+            .members
+            .replace(|note| {
+                let msg_sender = context.msg_sender().unwrap();
+                let mut is_member = false;
+
+                // Check membership
+                for i in 0..10 {
+                    if note.members[i] == msg_sender.inner {
+                        is_member = true;
+                    }
+                }
+                assert(is_member, "Not a member");
+                note
+            })
+            .emit(context.this_address(), MessageDelivery.CONSTRAINED_ONCHAIN);
+
+        NFT::at(nft)
+            .transfer_private_to_private(context.this_address(), recipient, token_id, 0)
+            .call(&mut context);
     }
 
     #[external("utility")]
