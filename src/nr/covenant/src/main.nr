@@ -129,6 +129,63 @@ contract Governance {
         );
     }
 
+    #[external("private")]
+    fn add_member(address: AztecAddress) {
+        storage
+            .members
+            .replace(|mut note| {
+                let msg_sender = context.msg_sender().unwrap();
+                let mut is_member = false;
+
+                let mut empty_slot_index = 11;
+
+                // Check membership
+                for i in 0..10 {
+                    if note.members[i] == msg_sender.inner {
+                        is_member = true;
+                    }
+                    if note.members[i] == 0 {
+                        if empty_slot_index == 11 {
+                            empty_slot_index = i;
+                        }
+                    }
+                }
+
+                assert(is_member, "Not a member");
+                assert(empty_slot_index == 11, "Members array is full");
+
+                note.members[empty_slot_index] = address.inner;
+                note
+            })
+            .emit(context.this_address(), MessageDelivery.CONSTRAINED_ONCHAIN)
+    }
+
+    #[external("private")]
+    fn remove_member(address: AztecAddress) {
+        storage
+            .members
+            .replace(|mut note| {
+                let msg_sender = context.msg_sender().unwrap();
+                // msg_sender is admin
+                assert(msg_sender.inner == note.members[0], "Not admin");
+
+                let mut replaced = false;
+                for i in 0..10 {
+                    if note.members[i] == address.inner {
+                        note.members[i] = 0;
+                        replaced = true;
+                    }
+
+                    if replaced {
+                        note.members[i - 1] = note.members[i];
+                        note.members[i] = 0;
+                    }
+                }
+                note
+            })
+            .emit(context.this_address(), MessageDelivery.CONSTRAINED_ONCHAIN)
+    }
+
     #[external("utility")]
     unconstrained fn _view_current_id() -> pub Field {
         let note = storage.last_proposal_id.view_note();

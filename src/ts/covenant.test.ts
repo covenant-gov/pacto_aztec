@@ -50,16 +50,6 @@ describe("Counter Contract", () => {
     govKeys = await deriveKeys(govSk);
     govSalt = Fr.random();
 
-    // Precompute contract address and register keys
-    //const contractInstance = await getContractInstanceFromInstantiationParams(
-    //  GovernanceContractArtifact,
-    //  {
-    //    constructorArgs: [alice],
-    //    salt: govSalt,
-    //    deployer: alice,
-    //  }
-    //);
-
     gov = (await deployGovernance(
       govKeys.publicKeys,
       wallet,
@@ -250,6 +240,192 @@ describe("Counter Contract", () => {
     // After a new proposal has been created it should be1
     expect(current_id).toStrictEqual(1n);
   })
+
+  it("member adds a new member(bob), should succeed"), async () => {
+    await expect(
+      gov
+        .withWallet(wallet)
+        .methods.create_proposal()
+        .send({ from: bob })
+        .wait(),
+    ).rejects.toThrow(/Assertion failed: Not a member/)
+
+
+    await gov
+      .withWallet(wallet)
+      .methods.add_member(bob)
+      .send({ from: alice })
+      .wait();
+
+    const current_members = await gov.methods._view_members().simulate({
+      from: alice,
+    });
+
+    expect(current_members[0]).toStrictEqual(alice.toBigInt());
+    expect(current_members[1]).toStrictEqual(bob.toBigInt());
+
+    await gov
+      .withWallet(wallet)
+      .methods.create_proposal()
+      .send({ from: bob })
+      .wait();
+
+    const proposal_id = await gov.methods._view_current_id().simulate({ from: bob, })
+
+    // After a new proposal has been created it should be1
+    expect(proposal_id).toStrictEqual(1n);
+  }
+
+  it("not a member adds a new member(bob), should fail"), async () => {
+    await gov
+      .withWallet(wallet)
+      .methods.add_member(bob)
+      .send({ from: bob })
+      .wait();
+
+    const current_members = await gov.methods._view_members().simulate({
+      from: alice,
+    });
+
+    expect(current_members[0]).toStrictEqual(alice.toBigInt());
+    expect(current_members[1]).toStrictEqual(0n);
+
+    await expect(
+      gov
+        .withWallet(wallet)
+        .methods.create_proposal()
+        .send({ from: bob })
+        .wait(),
+    ).rejects.toThrow(/Assertion failed: Not a member/)
+
+  }
+
+  it("member (admin => members[0]) removes a member, should succeed"), async () => {
+    await expect(
+      gov
+        .withWallet(wallet)
+        .methods.create_proposal()
+        .send({ from: bob })
+        .wait(),
+    ).rejects.toThrow(/Assertion failed: Not a member/)
+
+
+    await gov
+      .withWallet(wallet)
+      .methods.add_member(bob)
+      .send({ from: alice })
+      .wait();
+
+    const current_members = await gov.methods._view_members().simulate({
+      from: alice,
+    });
+
+    expect(current_members[0]).toStrictEqual(alice.toBigInt());
+    expect(current_members[1]).toStrictEqual(bob.toBigInt());
+
+    await gov
+      .withWallet(wallet)
+      .methods.create_proposal()
+      .send({ from: bob })
+      .wait();
+
+    const proposal_id = await gov.methods._view_current_id().simulate({ from: bob, })
+
+    // After a new proposal has been created it should be1
+    expect(proposal_id).toStrictEqual(1n);
+
+    await gov
+      .withWallet(wallet)
+      .methods.remove_member(bob)
+      .send({ from: alice })
+      .wait();
+
+    const after_bob_members = await gov.methods._view_members().simulate({
+      from: alice,
+    });
+
+    expect(after_bob_members[0]).toStrictEqual(alice.toBigInt());
+    expect(after_bob_members[1]).toStrictEqual(0n);
+
+    await expect(
+      gov
+        .withWallet(wallet)
+        .methods.create_proposal()
+        .send({ from: bob })
+        .wait(),
+    ).rejects.toThrow(/Assertion failed: Not a member/)
+
+
+    await gov
+      .withWallet(wallet)
+      .methods.add_member(bob)
+      .send({ from: alice })
+      .wait();
+
+    await gov
+      .withWallet(wallet)
+      .methods.remove_member(alice)
+      .send({ from: alice })
+      .wait();
+
+    const after_alice_members = await gov.methods._view_members().simulate({
+      from: alice,
+    });
+
+    expect(after_alice_members[0]).toStrictEqual(bob.toBigInt());
+    expect(after_alice_members[1]).toStrictEqual(0n);
+
+    await expect(
+      gov
+        .withWallet(wallet)
+        .methods.create_proposal()
+        .send({ from: alice })
+        .wait(),
+    ).rejects.toThrow(/Assertion failed: Not a member/)
+  }
+
+  it("not member (admin => members[0]) removes a member, should fail"), async () => {
+    await expect(
+      gov
+        .withWallet(wallet)
+        .methods.create_proposal()
+        .send({ from: bob })
+        .wait(),
+    ).rejects.toThrow(/Assertion failed: Not a member/)
+
+
+    await gov
+      .withWallet(wallet)
+      .methods.add_member(bob)
+      .send({ from: alice })
+      .wait();
+
+    const current_members = await gov.methods._view_members().simulate({
+      from: alice,
+    });
+
+    expect(current_members[0]).toStrictEqual(alice.toBigInt());
+    expect(current_members[1]).toStrictEqual(bob.toBigInt());
+
+    await gov
+      .withWallet(wallet)
+      .methods.create_proposal()
+      .send({ from: bob })
+      .wait();
+
+    const proposal_id = await gov.methods._view_current_id().simulate({ from: bob, })
+
+    // After a new proposal has been created it should be 1
+    expect(proposal_id).toStrictEqual(1n);
+
+    await expect(
+      gov
+        .withWallet(wallet)
+        .methods.remove_member(alice)
+        .send({ from: bob })
+        .wait(),
+    ).rejects.toThrow(/Assertion failed: Not admin/)
+  };
 })
 
 
