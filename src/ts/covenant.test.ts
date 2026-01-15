@@ -86,6 +86,13 @@ describe("Gov Contract", () => {
         return accountManager.address;
       }),
     );
+
+    token = (await deployTokenWithMinter(wallet, alice)) as TokenContract;
+    await token
+      .withWallet(wallet)
+      .methods.mint_to_private(gov.instance.address, AMOUNT)
+      .send({ from: alice })
+      .wait();
   });
 
   afterEach(async () => {
@@ -111,7 +118,7 @@ describe("Gov Contract", () => {
   it("create proposal from member, should succeed", async () => {
     await gov
       .withWallet(wallet)
-      .methods.create_proposal()
+      .methods.create_proposal(token.address, AMOUNT, bob)
       .send({ from: alice })
       .wait();
 
@@ -135,7 +142,7 @@ describe("Gov Contract", () => {
     await expect(
       gov
         .withWallet(wallet)
-        .methods.create_proposal()
+        .methods.create_proposal(token.address, AMOUNT, bob)
         .send({ from: bob })
         .wait(),
     ).rejects.toThrow(/Assertion failed: Not a member/)
@@ -154,7 +161,7 @@ describe("Gov Contract", () => {
     beforeEach(async () => {
       await gov
         .withWallet(wallet)
-        .methods.create_proposal()
+        .methods.create_proposal(token.address, AMOUNT, bob)
         .send({ from: alice })
         .wait();
     });
@@ -170,7 +177,54 @@ describe("Gov Contract", () => {
         from: alice,
       });
 
+
       expect(new_proposal.votes_for).toStrictEqual(1n);
+      expect(new_proposal.final).toStrictEqual(true);
+    });
+
+    it("vote on proposal from 2 members and finalize proposal, should succeed", async () => {
+
+      await gov
+        .withWallet(wallet)
+        .methods.add_member(bob)
+        .send({ from: alice })
+        .wait();
+
+      const current_members = await gov.methods._view_members().simulate({
+        from: alice,
+      });
+
+      expect(current_members[0]).toStrictEqual(alice.toBigInt());
+      expect(current_members[1]).toStrictEqual(bob.toBigInt());
+
+      await gov
+        .withWallet(wallet)
+        .methods.cast_vote(0n, 1)
+        .send({ from: alice })
+        .wait();
+
+
+      const new_proposal = await gov.methods._view_proposal(0n).simulate({
+        from: alice,
+      });
+
+
+      expect(new_proposal.votes_for).toStrictEqual(1n);
+      expect(new_proposal.final).toStrictEqual(false)
+
+      await gov
+        .withWallet(wallet)
+        .methods.cast_vote(0n, 1)
+        .send({ from: bob })
+        .wait();
+
+      const nn_proposal = await gov.methods._view_proposal(0n).simulate({
+        from: alice,
+      });
+
+      expect(nn_proposal.final).toStrictEqual(true)
+
+      expect(nn_proposal.votes_for).toStrictEqual(2n);
     });
 
     it("vote on proposal from member a second time, should fail", async () => {
@@ -198,8 +252,6 @@ describe("Gov Contract", () => {
         from: alice,
       });
 
-      console.log(n_proposal)
-
       await expect(
         gov
           .withWallet(wallet)
@@ -211,8 +263,6 @@ describe("Gov Contract", () => {
       const nn_proposal = await gov.methods._view_proposal(0n).simulate({
         from: alice,
       });
-
-      console.log(nn_proposal)
     });
 
     it("vote on proposal from non member, should fail", async () => {
@@ -237,7 +287,7 @@ describe("Gov Contract", () => {
     await expect(
       gov
         .withWallet(wallet)
-        .methods.create_proposal()
+        .methods.create_proposal(token.address, AMOUNT, bob)
         .send({ from: bob })
         .wait(),
     ).rejects.toThrow(/Assertion failed: Not a member/)
@@ -258,7 +308,7 @@ describe("Gov Contract", () => {
 
     await gov
       .withWallet(wallet)
-      .methods.create_proposal()
+      .methods.create_proposal(token.address, AMOUNT, bob)
       .send({ from: bob })
       .wait();
 
@@ -285,7 +335,7 @@ describe("Gov Contract", () => {
     await expect(
       gov
         .withWallet(wallet)
-        .methods.create_proposal()
+        .methods.create_proposal(token.address, AMOUNT, bob)
         .send({ from: bob })
         .wait(),
     ).rejects.toThrow(/Assertion failed: Not a member/)
@@ -296,7 +346,7 @@ describe("Gov Contract", () => {
     await expect(
       gov
         .withWallet(wallet)
-        .methods.create_proposal()
+        .methods.create_proposal(token.address, AMOUNT, bob)
         .send({ from: bob })
         .wait(),
     ).rejects.toThrow(/Assertion failed: Not a member/)
@@ -317,7 +367,7 @@ describe("Gov Contract", () => {
 
     await gov
       .withWallet(wallet)
-      .methods.create_proposal()
+      .methods.create_proposal(token.address, AMOUNT, bob)
       .send({ from: bob })
       .wait();
 
@@ -342,7 +392,7 @@ describe("Gov Contract", () => {
     await expect(
       gov
         .withWallet(wallet)
-        .methods.create_proposal()
+        .methods.create_proposal(token.address, AMOUNT, bob)
         .send({ from: bob })
         .wait(),
     ).rejects.toThrow(/Assertion failed: Not a member/)
@@ -370,7 +420,7 @@ describe("Gov Contract", () => {
     await expect(
       gov
         .withWallet(wallet)
-        .methods.create_proposal()
+        .methods.create_proposal(token.address, AMOUNT, bob)
         .send({ from: alice })
         .wait(),
     ).rejects.toThrow(/Assertion failed: Not a member/)
@@ -380,7 +430,7 @@ describe("Gov Contract", () => {
     await expect(
       gov
         .withWallet(wallet)
-        .methods.create_proposal()
+        .methods.create_proposal(token.address, AMOUNT, bob)
         .send({ from: bob })
         .wait(),
     ).rejects.toThrow(/Assertion failed: Not a member/)
@@ -401,7 +451,7 @@ describe("Gov Contract", () => {
 
     await gov
       .withWallet(wallet)
-      .methods.create_proposal()
+      .methods.create_proposal(token.address, AMOUNT, bob)
       .send({ from: bob })
       .wait();
 
@@ -421,21 +471,26 @@ describe("Gov Contract", () => {
 
   describe('withdraw', () => {
     beforeEach(async () => {
-      token = (await deployTokenWithMinter(wallet, alice)) as TokenContract;
-      await token
+      await gov
         .withWallet(wallet)
-        .methods.mint_to_private(gov.instance.address, AMOUNT)
+        .methods.create_proposal(token.address, AMOUNT, bob)
         .send({ from: alice })
         .wait();
     });
 
-    it('member should be able to withdraw correctly', async () => {
+    it('proposal finalized, member should be able to withdraw', async () => {
       await expectTokenBalances(token, gov.address, wad(0), AMOUNT, bob);
       await expectTokenBalances(token, bob, wad(0), wad(0));
 
       await gov
         .withWallet(wallet)
-        .methods.withdraw(token.address, AMOUNT, bob)
+        .methods.cast_vote(0n, 1)
+        .send({ from: alice })
+        .wait();
+
+      await gov
+        .withWallet(wallet)
+        .methods.withdraw(0n)
         .send({ from: alice })
         .wait();
 
@@ -446,6 +501,25 @@ describe("Gov Contract", () => {
       expect(notes.length).toBe(1);
     });
 
+    it('proposal NOT finalized, member should NOT be able to withdraw', async () => {
+      await expectTokenBalances(token, gov.address, wad(0), AMOUNT, bob);
+      await expectTokenBalances(token, bob, wad(0), wad(0));
+
+      await expect(
+        gov
+          .withWallet(wallet)
+          .methods.withdraw(0n)
+          .send({ from: alice })
+          .wait(),
+      ).rejects.toThrow(/Assertion failed: Proposal not finalized/)
+
+      await expectTokenBalances(token, gov.address, wad(0), AMOUNT, bob);
+      await expectTokenBalances(token, bob, wad(0), wad(0));
+
+      const notes = await wallet.getNotes({ contractAddress: token.address, scopes: [bob] });
+      expect(notes.length).toBe(0);
+    });
+
     it('not a member should NOT be able to withdraw', async () => {
       await expectTokenBalances(token, gov.address, wad(0), AMOUNT, bob);
       await expectTokenBalances(token, bob, wad(0), wad(0));
@@ -453,7 +527,7 @@ describe("Gov Contract", () => {
       await expect(
         gov
           .withWallet(wallet)
-          .methods.withdraw(token.address, AMOUNT, bob)
+          .methods.withdraw(0n)
           .send({ from: bob })
           .wait(),
       ).rejects.toThrow(/Assertion failed: Not a member/)
